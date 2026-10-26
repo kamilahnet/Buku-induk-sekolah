@@ -3,6 +3,7 @@
 <div class="page-heading">
     <div><h1>Nilai Rapor</h1><p class="subheading">Import dan lihat nilai 11 mata pelajaran siswa per tahun ajaran dan semester.</p></div>
     <div class="actions">
+        <a class="button secondary" href="<?= site_url('report-cards/backup') ?>">Backup data rapor</a>
         <?php if (session()->get('user_role') === 'admin'): ?><a class="button secondary" href="<?= site_url('report-cards/subjects') ?>">Atur nama mapel</a><?php endif ?>
         <a class="button secondary" href="<?= site_url('report-cards/template') ?>">Unduh template CSV</a>
     </div>
@@ -36,6 +37,23 @@
         </div>
     </form>
 </section>
+
+<?php if (session()->get('user_role') === 'admin'): ?>
+    <section class="panel" style="margin-bottom:18px;border-color:#f2d5d1">
+        <h2 class="panel-title">Hapus semua data nilai rapor</h2>
+        <p class="subheading" style="line-height:1.6;margin-bottom:14px">
+            Tindakan ini menghapus seluruh nilai rapor dari semua siswa, tahun ajaran, dan semester secara permanen.
+            Nama mata pelajaran tidak ikut terhapus. Untuk melanjutkan, ketik <strong>HAPUS SEMUA NILAI RAPOR</strong>.
+        </p>
+        <form method="post" action="<?= site_url('report-cards/delete-all') ?>" onsubmit="return confirm('PERINGATAN: seluruh nilai rapor akan dihapus permanen. Lanjutkan?')">
+            <?= csrf_field() ?>
+            <div class="actions" style="flex-wrap:wrap">
+                <input name="confirmation" aria-label="Konfirmasi hapus seluruh nilai rapor" placeholder="Ketik HAPUS SEMUA NILAI RAPOR" required autocomplete="off" style="max-width:320px">
+                <button class="button danger" type="submit">Hapus semua data rapor</button>
+            </div>
+        </form>
+    </section>
+<?php endif ?>
 
 <section class="panel">
     <div class="list-toolbar">

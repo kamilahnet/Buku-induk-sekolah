@@ -121,6 +121,81 @@ final class ReportCardsTest extends CIUnitTestCase
         $this->assertSame(11, $this->testDb->table('report_card_subjects')->countAllResults());
     }
 
+    public function testBackupIncludesAllPeriodsAndCurrentSubjectNames(): void
+    {
+        $this->testDb->table('students')->insert(['student_number' => '00123', 'full_name' => 'Siti Aminah']);
+        $this->testDb->table('report_card_subjects')->where('slot', 1)->update(['name' => 'Bahasa Indonesia']);
+        foreach (['Ganjil', 'Genap'] as $semester) {
+            $grade = [
+                'student_id' => 1,
+                'academic_year' => '2025/2026',
+                'semester' => $semester,
+            ];
+            for ($slot = 1; $slot <= 11; $slot++) {
+                $grade['subject_' . $slot] = (string) ($slot * 10);
+            }
+            $this->testDb->table('report_card_grades')->insert($grade);
+        }
+
+        $controller = new ReportCards();
+        $controller->initController(service('request'), service('response'), service('logger'));
+        $response = $controller->backup();
+        $this->assertStringStartsWith("\xEF\xBB\xBF", $response->getBody());
+        $this->assertStringContainsString('attachment; filename="backup-nilai-rapor-', $response->getHeaderLine('Content-Disposition'));
+
+        $stream = fopen('php://temp', 'r+');
+        fwrite($stream, substr($response->getBody(), 3));
+        rewind($stream);
+        $headers = fgetcsv($stream, null, ',', '"', '\\');
+        $first   = fgetcsv($stream, null, ',', '"', '\\');
+        $second  = fgetcsv($stream, null, ',', '"', '\\');
+        fclose($stream);
+
+        $this->assertSame(['NIPD', 'Nama Siswa', 'Tahun Ajaran', 'Semester', 'Bahasa Indonesia', 'Mapel 2', 'Mapel 3', 'Mapel 4', 'Mapel 5', 'Mapel 6', 'Mapel 7', 'Mapel 8', 'Mapel 9', 'Mapel 10', 'Mapel 11'], $headers);
+        $this->assertCount(15, $first);
+        $this->assertSame('00123', $first[0]);
+        $this->assertContains($first[3], ['Ganjil', 'Genap']);
+        $this->assertContains($second[3], ['Ganjil', 'Genap']);
+        $this->assertNotSame($first[3], $second[3]);
+        $this->assertSame('10', $first[4]);
+    }
+
+    public function testDeleteAllRequiresAdministratorAndExactConfirmation(): void
+    {
+        $this->testDb->table('students')->insert(['student_number' => '00123', 'full_name' => 'Siti Aminah']);
+        $grade = array_merge([
+            'student_id' => 1,
+            'academic_year' => '2025/2026',
+            'semester' => 'Ganjil',
+        ], array_fill_keys(array_map(static fn (int $slot): string => 'subject_' . $slot, range(1, 11)), 80));
+        $this->testDb->table('report_card_grades')->insert($grade);
+
+        $request = service('request');
+        $request->setGlobal('post', ['confirmation' => 'HAPUS SEMUA NILAI RAPOR']);
+        session()->set('user_role', 'operator');
+        $controller = new ReportCards();
+        $controller->initController($request, service('response'), service('logger'));
+        $controller->deleteAll();
+
+        $this->assertSame(1, $this->testDb->table('report_card_grades')->countAllResults());
+
+        session()->set('user_role', 'admin');
+        $request->setGlobal('post', ['confirmation' => 'HAPUS SEMUA NILAI RAPOR SALAH']);
+        $controller = new ReportCards();
+        $controller->initController($request, service('response'), service('logger'));
+        $controller->deleteAll();
+
+        $this->assertSame(1, $this->testDb->table('report_card_grades')->countAllResults());
+
+        $request->setGlobal('post', ['confirmation' => 'HAPUS SEMUA NILAI RAPOR']);
+        $controller = new ReportCards();
+        $controller->initController($request, service('response'), service('logger'));
+        $controller->deleteAll();
+
+        $this->assertSame(0, $this->testDb->table('report_card_grades')->countAllResults());
+        $this->assertSame(11, $this->testDb->table('report_card_subjects')->countAllResults());
+    }
+
     public function testImportTemplateRecognizesNameAsFallbackIdentifier(): void
     {
         $headers = ['Nama Siswa', 'Tahun Ajaran', 'Semester'];

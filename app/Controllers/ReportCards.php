@@ -223,6 +223,86 @@ class ReportCards extends BaseController
             ->setBody($csv);
     }
 
+    public function backup(): ResponseInterface|RedirectResponse
+    {
+        if (! $this->reportCardTablesAvailable()) {
+            return redirect()->to('/report-cards')->with('error', 'Tabel nilai rapor belum disiapkan.');
+        }
+
+        $subjects = $this->subjects();
+        $headers  = ['NIPD', 'Nama Siswa', 'Tahun Ajaran', 'Semester'];
+        foreach ($subjects as $subject) {
+            $headers[] = $subject['name'];
+        }
+
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            throw new \RuntimeException('Backup nilai rapor tidak dapat dibuat.');
+        }
+
+        fputcsv($stream, $headers, ',', '"', '\\', "\r\n");
+        $grades = db_connect()->table('report_card_grades grades')
+            ->select('students.student_number, students.full_name, grades.academic_year, grades.semester, grades.subject_1, grades.subject_2, grades.subject_3, grades.subject_4, grades.subject_5, grades.subject_6, grades.subject_7, grades.subject_8, grades.subject_9, grades.subject_10, grades.subject_11')
+            ->join('students', 'students.id = grades.student_id')
+            ->orderBy('grades.academic_year', 'DESC')
+            ->orderBy('grades.semester')
+            ->orderBy('students.full_name')
+            ->get()
+            ->getResultArray();
+
+        foreach ($grades as $grade) {
+            $values = [
+                $grade['student_number'] ?? '',
+                $grade['full_name'] ?? '',
+                $grade['academic_year'],
+                $grade['semester'],
+            ];
+            for ($slot = 1; $slot <= self::SUBJECT_COUNT; $slot++) {
+                $values[] = $grade['subject_' . $slot];
+            }
+            fputcsv($stream, $values, ',', '"', '\\', "\r\n");
+        }
+
+        rewind($stream);
+        $csv = "\xEF\xBB\xBF" . stream_get_contents($stream);
+        fclose($stream);
+
+        return $this->response
+            ->setHeader('Content-Type', 'text/csv; charset=UTF-8')
+            ->setHeader('Content-Disposition', 'attachment; filename="backup-nilai-rapor-' . date('Y-m-d-His') . '.csv"')
+            ->setBody($csv);
+    }
+
+    public function deleteAll(): RedirectResponse
+    {
+        if (session()->get('user_role') !== 'admin') {
+            return redirect()->to('/report-cards')->with('error', 'Hanya administrator yang dapat menghapus seluruh data nilai rapor.');
+        }
+        if (! $this->reportCardTablesAvailable()) {
+            return redirect()->to('/report-cards')->with('error', 'Tabel nilai rapor belum disiapkan.');
+        }
+
+        $confirmation = $this->request->getPost('confirmation');
+        if (! is_string($confirmation) || trim($confirmation) !== 'HAPUS SEMUA NILAI RAPOR') {
+            return redirect()->to('/report-cards')->with('error', 'Konfirmasi tidak sesuai. Tidak ada data nilai rapor yang dihapus.');
+        }
+
+        $db = db_connect();
+        $db->transBegin();
+        $db->table('report_card_grades')->where('id >', 0)->delete();
+
+        if ($db->transStatus() === false) {
+            $db->transRollback();
+
+            return redirect()->to('/report-cards')->with('error', 'Data nilai rapor gagal dihapus. Perubahan dibatalkan.');
+        }
+
+        $deletedCount = $db->affectedRows();
+        $db->transCommit();
+
+        return redirect()->to('/report-cards')->with('message', $deletedCount . ' data nilai rapor berhasil dihapus.');
+    }
+
     public function importData(): RedirectResponse
     {
         $uploadedFile = $this->request->getFile('csv_file');
@@ -536,6 +616,15 @@ class ReportCards extends BaseController
             ->orderBy('slot')
             ->get()
             ->getResultArray();
+    }
+
+    private function reportCardTablesAvailable(): bool
+    {
+        $db = db_connect();
+
+        return $db->tableExists('report_card_subjects')
+            && $db->tableExists('report_card_grades')
+            && $db->table('report_card_subjects')->countAllResults() === self::SUBJECT_COUNT;
     }
 
     private function normalizeHeader(string $header): string

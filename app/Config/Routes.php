@@ -16,6 +16,8 @@ $routes->group('', ['filter' => 'auth'], static function ($routes): void {
     $routes->get('reports', 'Dashboard::reports');
     $routes->get('report-cards', 'ReportCards::index');
     $routes->post('report-cards/migrate', 'ReportCards::runMigration');
+    $routes->get('report-cards/backup', 'ReportCards::backup');
+    $routes->post('report-cards/delete-all', 'ReportCards::deleteAll');
     $routes->get('report-cards/template', 'ReportCards::template');
     $routes->post('report-cards/import', 'ReportCards::importData');
     $routes->get('report-cards/subjects', 'ReportCards::subjectsPage');
